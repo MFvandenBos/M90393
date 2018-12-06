@@ -3,8 +3,13 @@
 #define MISO0 6
 #define MOSI0 7
 #define LED RED_LED
+#define show1 75
+#define show2 76
+#define show3 77
+#define show4 78
 
 #define DELAY_TIME 1
+bool ledflip = true;
 
 void setup() 
 {
@@ -17,6 +22,10 @@ void setup()
   pinMode(MISO0, INPUT_PULLUP);
   pinMode(MOSI0, OUTPUT);
   pinMode(LED, OUTPUT); 
+   pinMode(show1, OUTPUT);
+    pinMode(show2, OUTPUT);
+     pinMode(LED, OUTPUT);
+      pinMode(LED, OUTPUT);
   Serial.begin(9600); 
 
 }
@@ -26,22 +35,23 @@ void loop()
   // put your main code here, to run repeatedly: 
   delay(100);
   //Serial.println("At least you know the serial port is open");
-  delay(1000);
-  bool ledflip = true; 
-  unsigned char t = cmdRT();
-  //unsigned char t = cmdNOP();
-  digitalWrite(LED, ledflip ? HIGH : LOW); 
-  //digitalWrite(CS, value ? HIGH : LOW);
-  Serial.println(t, HEX);
-  Serial.println(t, BIN);
-  //Serial.println(0xF0, BIN);
-  Serial.write(63);
+  delay(5000);
+  //Serial.println(ledflip ? "true" : "false");
+  unsigned char t;
+  // t = cmdRT();
+  t = cmdEX();
+  //  t = cmdNOP();
+  //Serial.println(t, HEX);
   Serial.println();
-  ledflip = !ledflip;
+  Serial.println(t, BIN);
+  //Serial.println(0xF0, BIN)//Serial.write(63);
   t = cmdSM(0xF);
-  Serial.println("send measurement command zxyt = 1111");
+  //Serial.println("send measurement command zxyt = 1111");
   unsigned char cmdChar = 0x30 | 0xF; 
-  delay(10);
+  unsigned char inputchar = 0x30;
+  inputchar |= 0xF;
+  Serial.print("inputchar = ");Serial.println(inputchar, BIN);
+  delay(DELAY_TIME);
   Serial.print("CdmSM = "); Serial.println(cmdChar, BIN);
   Serial.print("CdmSMstatus = "); Serial.println(t, BIN);
   unsigned int  meas = cmdRM(0xF);
@@ -64,23 +74,23 @@ unsigned char cmdEX(){
 unsigned char cmdSB(char zyxt){
     unsigned char inputchar = 0x10;
     // warning add zyxt
-    inputchar = inputchar|zyxt;
+    //inputchar |= zyxt;
     return sendCommand1(inputchar);
 }
 unsigned char cmdSWOC(char zyxt){
     unsigned char inputchar = 0x20;
     // warning add zyxt
-    //inputchar = inputchar|(zyxt);
+    //inputchar = inputchar|zyxt;
     return sendCommand1(inputchar);
 }
 unsigned char cmdSM(char zyxt){
     unsigned char inputchar = 0x30;
     // warning add zyxt
-    //inputchar = inputchar|(zyxt);
+    inputchar = inputchar|zyxt;
     return sendCommand1(inputchar);
 }
 unsigned int cmdRM(char zyxt){
-    unsigned char inputchar = 0x30;
+    unsigned char inputchar = 0x40;
     // warning add zyxt
     inputchar = inputchar|zyxt;
     return sendCommandAdv(inputchar);
@@ -108,6 +118,7 @@ unsigned char sendCommand1(unsigned char c)
   delay(DELAY_TIME);
 
   digitalWrite(CS, HIGH);
+  digitalWrite(MOSI0, HIGH);
 
   return tmp;
   
@@ -123,12 +134,13 @@ unsigned int sendCommandAdv(unsigned char c){
   unsigned char tmp3;
   unsigned char tmp4;
   
-  if (tmp1 & 0x01){
+  if (tmp1 & 0x02){
     delay(DELAY_TIME);
     tmp2 = readMLX90393();
-    if (tmp1 & 0x02){
+    tmp3 = readMLX90393();
+    if (tmp1 & 0x01){
       delay(DELAY_TIME);
-      tmp3 = readMLX90393();
+      tmp4 = readMLX90393();
     }
   }
   
@@ -139,40 +151,44 @@ unsigned int sendCommandAdv(unsigned char c){
   return tmpI;
   }
   unsigned int tmpI;
-  tmpI |= (unsigned int)tmp1 << 16;
-  tmpI |= (unsigned int)tmp2 << 8;
-  tmpI |= (unsigned int)tmp3 << 0;
+  tmpI |= (unsigned int)tmp1 << 24;
+  tmpI |= (unsigned int)tmp2 << 16;
+  tmpI |= (unsigned int)tmp3 << 8;
+  tmpI |= (unsigned int)tmp4 << 0;
+  delay(DELAY_TIME);
+  digitalWrite(CS, HIGH);
+  digitalWrite(MOSI0, HIGH);
 return tmpI; 
 }
 
 void writeMLX90393(unsigned char c)
 {
-  digitalWrite(MOSI0, (c & 0x80) ? HIGH : LOW);
   digitalWrite(SCLK, LOW);
-  delay(5);
+  digitalWrite(MOSI0, (c & 0x80) ? HIGH : LOW);
+  delay(DELAY_TIME);
   digitalWrite(SCLK, HIGH);
   delay(DELAY_TIME);
   
+  digitalWrite(SCLK, LOW);
   digitalWrite(MOSI0, (c & 0x40) ? HIGH : LOW);
-  digitalWrite(SCLK, LOW);
   delay(DELAY_TIME);
   digitalWrite(SCLK, HIGH);
   delay(DELAY_TIME);
 
+  digitalWrite(SCLK, LOW);
   digitalWrite(MOSI0, (c & 0x20) ? HIGH : LOW);
-  digitalWrite(SCLK, LOW);
   delay(DELAY_TIME);
   digitalWrite(SCLK, HIGH);
   delay(DELAY_TIME);
 
-  digitalWrite(MOSI0, (c & 0x10) ? HIGH : LOW);
   digitalWrite(SCLK, LOW);
+  digitalWrite(MOSI0, (c & 0x10) ? HIGH : LOW); 
   delay(DELAY_TIME);
   digitalWrite(SCLK, HIGH);
   delay(DELAY_TIME);
 
+  digitalWrite(SCLK, LOW);
   digitalWrite(MOSI0, (c & 0x08) ? HIGH : LOW);
-  digitalWrite(SCLK, LOW);
   delay(DELAY_TIME);
   digitalWrite(SCLK, HIGH);
   delay(DELAY_TIME);
@@ -183,14 +199,14 @@ void writeMLX90393(unsigned char c)
   digitalWrite(SCLK, HIGH);
   delay(DELAY_TIME);
 
-  digitalWrite(MOSI0, (c & 0x02) ? HIGH : LOW);
   digitalWrite(SCLK, LOW);
+  digitalWrite(MOSI0, (c & 0x02) ? HIGH : LOW);
   delay(DELAY_TIME);
   digitalWrite(SCLK, HIGH);
   delay(DELAY_TIME);
 
-  digitalWrite(MOSI0, (c & 0x01) ? HIGH : LOW);
   digitalWrite(SCLK, LOW);
+  digitalWrite(MOSI0, (c & 0x01) ? HIGH : LOW);
   delay(DELAY_TIME);
   digitalWrite(SCLK, HIGH);
   delay(DELAY_TIME);
