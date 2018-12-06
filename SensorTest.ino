@@ -28,8 +28,8 @@ void loop()
   //Serial.println("At least you know the serial port is open");
   delay(1000);
   bool ledflip = true; 
-  unsigned char t = resetIC();
-  //unsigned char t = NOPIC();
+  unsigned char t = cmdRT();
+  //unsigned char t = cmdNOP();
   digitalWrite(LED, ledflip ? HIGH : LOW); 
   //digitalWrite(CS, value ? HIGH : LOW);
   Serial.println(t, HEX);
@@ -38,22 +38,55 @@ void loop()
   Serial.write(63);
   Serial.println();
   ledflip = !ledflip;
+  t = cmdSM(0xF);
+  Serial.println("send measurement command zxyt = 1111");
+  unsigned char cmdChar = 0x30 | 0xF; 
+  delay(10);
+  Serial.print("CdmSM = "); Serial.println(cmdChar, BIN);
+  Serial.print("CdmSMstatus = "); Serial.println(t, BIN);
+  unsigned int  meas = cmdRM(0xF);
+  Serial.println("read measurement");
+  Serial.print("CmdRM = " ); Serial.println(meas, BIN);
+  
   
   
 }
 
-unsigned char NOPIC()
+unsigned char cmdNOP()
 {
     unsigned char inputchar = 0x00;
     return sendCommand1(inputchar);
 }
-
-unsigned char EX_it(){
-     unsigned char inputchar = 0x80;
+unsigned char cmdEX(){
+    unsigned char inputchar = 0x80;
     return sendCommand1(inputchar);
 }
-    
-unsigned char resetIC()
+unsigned char cmdSB(char zyxt){
+    unsigned char inputchar = 0x10;
+    // warning add zyxt
+    inputchar = inputchar|zyxt;
+    return sendCommand1(inputchar);
+}
+unsigned char cmdSWOC(char zyxt){
+    unsigned char inputchar = 0x20;
+    // warning add zyxt
+    //inputchar = inputchar|(zyxt);
+    return sendCommand1(inputchar);
+}
+unsigned char cmdSM(char zyxt){
+    unsigned char inputchar = 0x30;
+    // warning add zyxt
+    //inputchar = inputchar|(zyxt);
+    return sendCommand1(inputchar);
+}
+unsigned int cmdRM(char zyxt){
+    unsigned char inputchar = 0x30;
+    // warning add zyxt
+    inputchar = inputchar|zyxt;
+    return sendCommandAdv(inputchar);
+}
+
+unsigned char cmdRT()
 {
     unsigned char inputchar = 0xF0;
     return sendCommand1(inputchar);
@@ -78,6 +111,38 @@ unsigned char sendCommand1(unsigned char c)
 
   return tmp;
   
+}
+unsigned int sendCommandAdv(unsigned char c){
+  digitalWrite(SCLK, HIGH); 
+  digitalWrite(CS, LOW); 
+  delay(DELAY_TIME*4); 
+  writeMLX90393(c);
+  delay(DELAY_TIME*4);
+  unsigned char tmp1 = readMLX90393();
+  unsigned char tmp2;
+  unsigned char tmp3;
+  unsigned char tmp4;
+  
+  if (tmp1 & 0x01){
+    delay(DELAY_TIME);
+    tmp2 = readMLX90393();
+    if (tmp1 & 0x02){
+      delay(DELAY_TIME);
+      tmp3 = readMLX90393();
+    }
+  }
+  
+    else{
+  unsigned int tmpI = (unsigned int)tmp1; 
+  delay(DELAY_TIME);
+  digitalWrite(CS, HIGH);   
+  return tmpI;
+  }
+  unsigned int tmpI;
+  tmpI |= (unsigned int)tmp1 << 16;
+  tmpI |= (unsigned int)tmp2 << 8;
+  tmpI |= (unsigned int)tmp3 << 0;
+return tmpI; 
 }
 
 void writeMLX90393(unsigned char c)
@@ -135,8 +200,8 @@ void writeMLX90393(unsigned char c)
   
 }
 
-unsigned char readMLX90393()
-{
+unsigned char readMLX90393(){
+
   unsigned char tmp = 0;
 
   digitalWrite(SCLK, HIGH);
