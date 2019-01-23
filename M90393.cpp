@@ -536,7 +536,7 @@ void M90393::readRes(){
 	//should be called after modfiying the res and gain 
 	unsigned short value_res;
 	unsigned short readout;
-	readout = cmdRR(0x0A, 0x00, 0x00);
+	readout = cmdRR(0x03, 0x00, 0x00); //read memory no. 3 you toady
 	value_res = (readout & 0x600) >> 9;
 	res_x = value_res;
 	value_res = (readout & 0x180) >> 7;
