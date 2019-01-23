@@ -1,25 +1,19 @@
 #include "Energia.h"
 /*
   M90393.ccp - Library for simplified MLX90393 SPI communication.
-  Created by Michael van den Bos, November 30, 2018.
+  Created by Michael van den Bos, January 19th, 2019
 */
 
 #include "Energia.h"
 #include "M90393.h"
 
-/* Morse::Morse(int pin)
-{
-  pinMode(pin, OUTPUT);
-  _pin = pin;
-}
-*/
 // constructor assigns pins according to the number of sensors
-M90393::M90393(int sensors)
-{
-  int _ERLED = 14; //Led pin
-  pinMode(_ERLED, OUTPUT);
-  num_s = sensors;
-  _pin = _ERLED;
+// constructor contains gain lookup table
+// constructor adds pullups to inputs
+// constructor sets output pins for CS, SCLK, MOSI
+M90393::M90393(int sensors){
+	num_s = sensors;
+
 
  // int MISO1 = 34;  int MOSI1 = 55;
  // int MISO2 = 35;  int MOSI2 = 56;
@@ -79,76 +73,26 @@ gainlookup[7][0]=0.1502;gainlookup[7][1]=0.242;
    for (sensorSelect = 0; sensorSelect < num_s+1; sensorSelect++)  {
     pinMode(_MISO[sensorSelect], INPUT_PULLUP);
   }
-  
-  
+  digitalWrite(CS, HIGH); 
+  digitalWrite(SCLK, HIGH); 
+  digitalWrite(MOSI0, HIGH);
+  pinMode(CS, OUTPUT);
+  pinMode(SCLK, OUTPUT);
+  pinMode(MOSI0, OUTPUT);
+ 
+  // set knownRes to false: this forces to run readRes. 
+	knownRes = false;
+	// end of constructor
 };
 
 
-int M90393::pintest()
-{ 
-	
-    digitalWrite(MOSI0, LOW);   // turn output pin low
-    digitalWrite(MOSI0, HIGH);   // turn the pin high
-	
-    delay(1000); // keep high for one second
-	int tim = micros();
-    digitalWrite(MOSI0, LOW); //turn the pin low. 
-	tim = micros()-tim;
-	return tim;
-  }
-
-int M90393::pintest2(){
-	char tempchar;
-	int tim = micros();
-	int count = 1;
-	for(int count2 = 0; count2 < 16; count2++){
-        tempchar |= (digitalRead(_MISO[count2]) & 0x01 ) << (8 - count);
-      }
-	tim = micros()-tim;
-	return tim; 
-}
-
-float M90393::getGainZ(int res, int gain){
-	float tmp;
-	tmp = gainlookup[gain][1];
-	if (res==0){
-	return tmp;
-	}
-	else{
-		tmp = tmp*(float)(1 << res);
-		return tmp; 
-	}
-}
-float M90393::getGainXY(int res, int gain){
-	float tmp;
-	tmp = gainlookup[gain][0];
-	if (res==0){
-	return tmp;
-	}
-	else{
-		tmp = tmp*(float)(1 << res);
-		return tmp; 
-	}
-}
 
 
-void M90393::dot()
-{
-  digitalWrite(_pin, HIGH);
-  delay(250);
-  digitalWrite(_pin, LOW);
-  delay(250);
-}
 
-void M90393::dash()
-{
-  digitalWrite(_pin, HIGH);
-  delay(1000);
-  digitalWrite(_pin, LOW);
-  delay(250);
-}
-unsigned char M90393::cmdNOP()
-{
+
+
+//+++++++++++++++++++++++++++++++++++++++++++++++++++++ Command functions +++++++++++++++++++++++++++++++++++++++++++++++++++++
+unsigned char M90393::cmdNOP(){
     unsigned char inputchar = 0x00;
     return sendCommand1(inputchar);
 }
@@ -174,9 +118,32 @@ unsigned char M90393::cmdSM(char zyxt){
     inputchar = inputchar|zyxt;
     return sendCommand1(inputchar);
 }
+void M90393::cmdRM(char zyxt){
+    unsigned char inputchar = 0x40;
+    // warning add zyxt
+    inputchar = inputchar|zyxt;
+    //readMLX90393_multi(shortoutputmatrix, numsensors);
+    sendCommandlong(inputchar, 0x00, 0x00, 0x00, num_s, 1 ,8);
+}
+unsigned char M90393::cmdRT(){
+    unsigned char inputchar = 0xF0;
+    return sendCommand1(inputchar);
+}
+unsigned char M90393::cmdWR(unsigned char c2, unsigned char c3, unsigned char c4){
+	unsigned char inputchar = 0x60;
+	sendCommandlong(inputchar, c2, c3, (c4<<2), num_s, 4, 0);
+	return statusmatrix[0];
+	// maybe return a bitwise sum instead of just the first one. This allows for finding errors.  	
+}
+unsigned short M90393::cmdRR(unsigned char c2, unsigned char c3, unsigned char c4){
+	resetdatamatrix();
+	unsigned char inputchar = 0x50;
+	sendCommandlong(inputchar, (c2<<2), c3, c4, num_s, 2, 2);
+	return datamatrix[0][0];
+}
 
-unsigned char M90393::sendCommand1(unsigned char c)
-{
+//+++++++++++++++++++++++++++++++++++++++++++++++++++++ Utility functions +++++++++++++++++++++++++++++++++++++++++++++++++++++
+unsigned char M90393::sendCommand1(unsigned char c){
   digitalWrite(SCLK, HIGH);
   digitalWrite(CS, LOW); 
 
@@ -196,7 +163,131 @@ unsigned char M90393::sendCommand1(unsigned char c)
   return tmp;
   
 }
+void M90393::sendCommandlong(unsigned char c, unsigned char c2, unsigned char c3, unsigned char c4, int ArraySize, int writebytes, int returnbytes){
+  // send command bytes
+  writeseqMLX90393(c, c2, c3, c4, writebytes); //writeseq sets CS low. 
+  // read return status byte CS remains low
+  readMLX90393_multiC(ArraySize); // status byte is first byte of return
+  transportMLX90393C(ArraySize); // status byte is transported to status matrix
+  
+  if (returnbytes > 0 ) {
+	//read return data bytes
+	for(int count8 = 0; count8 < (returnbytes/2); count8++){
+	readMLX90393_multiS(ArraySize);
+	transportMLX90393S(ArraySize, count8); // transfers bytes from short output to datamatrix
+	delay(DELAY_TIME);
+	}
+  }
+   digitalWrite(CS, HIGH); //command sequence finished. Reset by CS HIGH
+   digitalWrite(MOSI0, HIGH);//command sequence finished. Reset by MOSI HIGH
+}
+void M90393::sendCommandlong(unsigned char c, unsigned char c2, unsigned char c3, unsigned char c4, int ArraySize, int writebytes, int returnbytes, unsigned char zyxt){
+  // send command bytes
+  // this overload is used when zxyt is not 0x0F and retrieving a measurement (cmd RM)
+  writeseqMLX90393(c, c2, c3, c4, writebytes); //writeseq sets CS low. 
+  // read return status byte CS remains low
+  readMLX90393_multiC(ArraySize); // status byte is first byte of return
+  transportMLX90393C(ArraySize); // status byte is transported to status matrix
+  bool _ex = true;
+	if (zyxt & 0x01) {
+		//read return data bytes
+		readMLX90393_multiS(ArraySize);
+		transportMLX90393S(ArraySize, 0); // transfers bytes from short output to datamatrix for temperature
+		delay(DELAY_TIME);
+	}else{resetdatamatrix(zyxt, ArraySize); _ex = false;}
+	if (zyxt & 0x02) {
+		//read return data bytes
+		readMLX90393_multiS(ArraySize);
+		transportMLX90393S(ArraySize, 1); // transfers bytes from short output to datamatrix for x-axis
+		delay(DELAY_TIME);
+	}else{if(_ex){resetdatamatrix(zyxt, ArraySize); _ex = false;}}
+	if (zyxt & 0x04) {
+		//read return data bytes
+		readMLX90393_multiS(ArraySize);
+		transportMLX90393S(ArraySize, 2); // transfers bytes from short output to datamatrix for y-axis
+		delay(DELAY_TIME);
+	}else{if(_ex){resetdatamatrix(zyxt, ArraySize); _ex = false;}}
+	if (zyxt & 0x08) {
+		//read return data bytes
+		readMLX90393_multiS(ArraySize);
+		transportMLX90393S(ArraySize, 3); // transfers bytes from short output to datamatrix for z-axis
+		delay(DELAY_TIME);
+	}else{if(_ex){resetdatamatrix(zyxt, ArraySize); _ex = false;}}
+  
+   digitalWrite(CS, HIGH); //command sequence finished. Reset by CS HIGH
+   digitalWrite(MOSI0, HIGH);//command sequence finished. Reset by MOSI HIGH
+}
 
+
+void M90393::readMLX90393_multiC(int ArraySize){
+// this function reads one byte	
+// charoutputmatrix is set to 0
+// for loop takes 37 microseconds for 16 pins. which is not a problem as long as we use delay(). once using delaymicros() it becomes a problem. 
+for(int count2 = 0; count2 < ArraySize; count2++){
+		charoutputmatrix[count2] =0x00; // set variable to zero
+      }
+
+	  // first loop goes through 8 bits
+ for(int count = 1; count < 9; count++){
+	  // clock goes high
+      digitalWrite(SCLK, HIGH);
+      delay(DELAY_TIME); // wait
+	  // second loop goes through all relevant read pins.
+	  // for loop takes 37 microseconds for 16 pins. 
+      for(int count2 = 0; count2 < ArraySize; count2++){
+        charoutputmatrix[count2] |= (digitalRead(_MISO[count2]) & 0x01 ) << (8 - count);
+      }
+      delay(DELAY_TIME);
+      digitalWrite(SCLK, LOW); // clock goes low. (here the values are thought of as read)
+      delay(DELAY_TIME);   
+  }
+  digitalWrite(SCLK, HIGH); // clock goes high at the end
+}
+void M90393::readMLX90393_multiS(int ArraySize){
+// this function reads two bytes	
+// first loop goes through 16 bits
+// for loop takes 37 microseconds for 16 pins. which is not a problem as long as we use delay(). once using delaymicros() it becomes a problem.
+// this has to be here because the entire array can only be edited in a for loop. 
+// this has to be here because if it isn't it is possible that a 1 of an old measurement remains, where there should be a 0. 
+ for(int count2 = 0; count2 < ArraySize; count2++){
+		shortoutputmatrix[count2] = 0x00; // set variable to zero
+      }
+ for(int count = 1; count < 17; count++){
+	  // clock goes high
+      digitalWrite(SCLK, HIGH);
+      delay(DELAY_TIME); // wait
+	  // second loop goes through all relevant read pins.
+	  // for loop takes 37 microseconds for 16 pins. 
+      for(int count2 = 0; count2 < ArraySize; count2++){
+		//Serial.print("this is readMLX90393_multiS, I am at count2 ");
+		//Serial.println(count2);
+		//Serial.print("this is readMLX90393_multiS, I am at count ");
+		//Serial.println(count);
+		//Serial.print("this is readMLX90393_multiS, the retun is ");
+		//Serial.println(digitalRead(_MISO[count2]) & 0x01);
+        shortoutputmatrix[count2] |= (digitalRead(_MISO[count2]) & 0x01 ) << (16 - count);
+      }
+      delay(DELAY_TIME);
+      digitalWrite(SCLK, LOW); // clock goes low. (here the values are read)
+      delay(DELAY_TIME);   
+  }
+  digitalWrite(SCLK, HIGH);
+}
+void M90393::transportMLX90393C(int ArraySize){
+  
+  for(int count = 0; count < ArraySize; count++){
+    
+    statusmatrix[count] = charoutputmatrix[count];
+  }
+}
+void M90393::transportMLX90393S(int ArraySize, int partsel){
+  
+  for(int count = 0; count < ArraySize; count++){
+    //Serial.print("this is transportMLX90393S I am transporting ");
+	//Serial.println(shortoutputmatrix[count], BIN);
+    datamatrix[count][partsel] = shortoutputmatrix[count];
+  }
+}
 unsigned char M90393::readMLX90393(){
 
   unsigned char tmp = 0;
@@ -264,8 +355,7 @@ unsigned char M90393::readMLX90393(){
   
 }	
 
-void M90393::writeMLX90393(unsigned char c)
-{
+void M90393::writeMLX90393(unsigned char c){
   digitalWrite(SCLK, LOW);
   digitalWrite(MOSI0, (c & 0x80) ? HIGH : LOW);
   delay(DELAY_TIME);
@@ -319,5 +409,308 @@ void M90393::writeMLX90393(unsigned char c)
   
 }
 
+void M90393::writeseqMLX90393(unsigned char c, unsigned char c2, unsigned char c3, unsigned char c4, int writebytes){
+  digitalWrite(SCLK, HIGH); 
+  digitalWrite(CS, LOW); 
+  delay(DELAY_TIME*4); 
+  writeMLX90393(c);
+  delay(DELAY_TIME*3);
+    if ( writebytes == 1 ) {}
+	else {
+        writeMLX90393(c2);
+		delay(DELAY_TIME*3);
+		if ( writebytes == 3 ){
+		  writeMLX90393(c3);
+          delay(DELAY_TIME*3);
+		  }
+        if (writebytes == 4){
+			writeMLX90393(c3);
+			delay(DELAY_TIME*3);
+            writeMLX90393(c4);
+            delay(DELAY_TIME*4);
+          }     
+    }
+}
+
+//+++++++++++++++++++++++++++++++++++++++++++++++++++++ retrieval functions +++++++++++++++++++++++++++++++++++++++++++++++++++++
+float M90393::getSenseZ(){
+	float tmp;
+	int gain = 0;
+	int res = 0;
+	unsigned short value_gain;
+	unsigned short value_res;
+	unsigned short value_hallconf;
+	unsigned short readout;
+	readout = cmdRR(0x00, 0x00, 0x00);
+	value_gain = (readout & 0x70) >> 4;
+	value_hallconf = (readout & 0xF);
+	readout = cmdRR(0x0A, 0x00, 0x00);
+	value_res = (readout & 0x60) >> 5;
+	tmp = gainlookup[gain][1];
+	res = value_res;
+	gain = value_gain;
+	tmp = gainlookup[gain][1];
+	if (res==0){
+	return tmp;
+	}
+	else{
+		tmp = tmp*(float)(1 << res);
+		return tmp; 
+	}
+}
+float M90393::getGainZ(int res, int gain){
+	float tmp;
+	tmp = gainlookup[gain][1];
+	if (res==0){
+	return tmp;
+	}
+	else{
+		tmp = tmp*(float)(1 << res);
+		return tmp; 
+	}
+}
+float M90393::getGainXY(int res, int gain){
+	float tmp;
+	tmp = gainlookup[gain][0];
+	if (res==0){
+	return tmp;
+	}
+	else{
+		tmp = tmp*(float)(1 << res);
+		return tmp; 
+	}
+}
+float M90393::getSenseX(){
+	float tmp;
+	int gain = 0;
+	int res = 0;
+	unsigned short value_gain;
+	unsigned short value_res;
+	unsigned short value_hallconf;
+	unsigned short readout;
+	readout = cmdRR(0x00, 0x00, 0x00);
+	value_gain = (readout & 0x70) >> 4;
+	value_hallconf = (readout & 0xF);
+	readout = cmdRR(0x0A, 0x00, 0x00);
+	value_res = (readout & 0x600) >> 9;
+	tmp = gainlookup[gain][1];
+	res = value_res;
+	gain = value_gain;
+	tmp = gainlookup[gain][1];
+	tmp = gainlookup[gain][0];
+	if (res==0){
+	return tmp;
+	}
+	else{
+		tmp = tmp*(float)(1 << res);
+		return tmp; 
+	}
+}
+float M90393::getSenseY(){
+	float tmp;
+	int gain = 0;
+	int res = 0;
+	unsigned short value_gain;
+	unsigned short value_res;
+	unsigned short value_hallconf;
+	unsigned short readout;
+	readout = cmdRR(0x00, 0x00, 0x00);
+	value_gain = (readout & 0x70) >> 4;
+	value_hallconf = (readout & 0xF);
+	readout = cmdRR(0x0A, 0x00, 0x00);
+	value_res = (readout & 0x180) >> 7;
+	tmp = gainlookup[gain][1];
+	res = value_res;
+	gain = value_gain;
+	tmp = gainlookup[gain][1];
+	tmp = gainlookup[gain][0];
+	if (res==0){
+	return tmp;
+	}
+	else{
+		tmp = tmp*(float)(1 << res);
+		return tmp; 
+	}
+}
+void M90393::readRes(){
+	//should be called after modfiying the res and gain 
+	unsigned short value_res;
+	unsigned short readout;
+	readout = cmdRR(0x0A, 0x00, 0x00);
+	value_res = (readout & 0x600) >> 9;
+	res_x = value_res;
+	value_res = (readout & 0x180) >> 7;
+	res_y = value_res;
+	value_res = (readout & 0x60) >> 5;
+	res_z = value_res;
+	sense_x = getSenseX();
+	sense_y = getSenseX();
+	sense_z = getSenseX();
+}
+
+unsigned short M90393::boostRet(int sensor, unsigned short mode){
+	switch(mode){
+		case 0: {
+			unsigned short tmp = 0;
+			tmp = statusmatrix[sensor];
+			return tmp; } break;
+		case 1:
+			return datamatrix[sensor][0];
+			break;
+		case 2: 
+			return datamatrix[sensor][1];
+			break;
+		case 3:
+			return datamatrix[sensor][2];
+			break;
+		case 4:
+			return datamatrix[sensor][3];
+			break;
+		default: 
+		{unsigned short tmp = 0x00;
+		return tmp;}
+			break;
+	}
+}
+
+float M90393::retrieve(int sensor, unsigned short mode){
+	if (knownRes){}
+	else{readRes(); 
+		knownRes = true;}
+	switch(mode){
+		case 0: {
+			unsigned short tmp = 0;
+			tmp = statusmatrix[sensor];
+			return tmp; } break;
+		case 1: {
+		float temp = 1; 
+		// datamatrix[sensor][0] = temperature
+			unsigned short temp2 = 0;
+			if (datamatrix[sensor][0] == 46244){temp = 25;}
+			else if (datamatrix[sensor][0]>46244){
+				temp2 = datamatrix[sensor][0]-46244;
+				temp = 25 + temp2/45.2; 
+			}// is this consistent with int math?
+			else if (datamatrix[sensor][0]<46244){	
+				temp2 = 46244-datamatrix[sensor][0];
+				temp = 25 - temp2/45.2; 
+			}
+			return temp;}
+			break;
+		case 2:{
+			//datamatrix[sensor][1] = x-axis
+			float temp = 0; 
+			unsigned short tmpda = datamatrix[sensor][1];
+			if (res_x <2){
+					signed short tmpdx = tmpda;
+					temp = tmpdx*sense_x;
+					// this should be it (O_O)
+			}
+			// you should put an else here if res > 1
+			return temp;}
+		break;
+		case 3: {
+			//datamatrix[sensor][2] = y-axis
+			float temp = 0; 
+			unsigned short tmpda = datamatrix[sensor][2];
+			if (res_x <2){
+					signed short tmpdx = tmpda;
+					temp = tmpdx*sense_y;
+					// this should be it (O_O)
+			}
+			return temp;}
+			break;
+		case 4: {
+				//datamatrix[sensor][3] = z-axis
+			float temp = 0; 
+			unsigned short tmpda = datamatrix[sensor][3];
+			if (res_x <2){
+					signed short tmpdx = tmpda;
+					temp = tmpdx*sense_z;
+					// this should be it (O_O)
+			}
+			return temp;}
+			break;
+		default: {
+			unsigned short tmp = 0x00;
+		return tmp;}
+			break;
+	}
+}
+unsigned char M90393::retrieveS(int sensor){
+	return statusmatrix[sensor];
+}
 
 
+//+++++++++++++++++++++++++++++++++++++++++++++++++++++ test functions +++++++++++++++++++++++++++++++++++++++++++++++++++++
+void M90393::datamatrixrand(){
+	int randa = rand(); // outside the loop since rand is slow. 
+	for(int count = 0; count < 17; count++){  
+      for(int count2 = 0; count2 < 5; count2++){
+		  
+		  unsigned short temprand;
+			temprand = randa;
+			temprand = (temprand + count + count2) >> 1;
+		datamatrix[count][count2] = temprand; // set variable to temprand
+      }
+  }
+ 
+}
+int M90393::pintest()
+{ 
+	
+    digitalWrite(MOSI0, LOW);   // turn output pin low
+    digitalWrite(MOSI0, HIGH);   // turn the pin high
+	
+    delay(1000); // keep high for one second
+	int tim = micros();
+    digitalWrite(MOSI0, LOW); //turn the pin low. 
+	tim = micros()-tim;
+	return tim;
+  }
+
+int M90393::pintest2(){
+	char tempchar;
+	int tim = micros();
+	int count = 1;
+	for(int count2 = 0; count2 < 16; count2++){
+        tempchar |= (digitalRead(_MISO[count2]) & 0x01 ) << (8 - count);
+      }
+	tim = micros()-tim;
+	return tim; 
+}
+
+void M90393::resetdatamatrix(){
+	for(int count = 0; count < 17; count++){  
+      for(int count2 = 0; count2 < 5; count2++){
+		datamatrix[count][count2] = 0x00; // set variable to zero
+      }
+  }
+}
+void M90393::resetdatamatrix(unsigned char zyxt, int ArraySize){
+	 
+		if ((zyxt & 0x01)>0){}
+			else{
+				for(int count = 0; count < ArraySize; count++){ 
+				datamatrix[count][0] = 0x00; // set variable temp to zero	
+				}
+			}
+		if ((zyxt & 0x02)>0){}
+			else{
+				for(int count = 0; count < ArraySize; count++){ 
+				datamatrix[count][1] = 0x00; // set variable x to zero
+				}
+			}
+		if ((zyxt & 0x04)>0){}
+			else{
+				for(int count = 0; count < ArraySize; count++){ 
+				datamatrix[count][3] = 0x00; // set variable y to zero
+				}
+			}
+		if ((zyxt & 0x04)>0){}
+		else{
+				for(int count = 0; count < ArraySize; count++){ 
+				datamatrix[count][4] = 0x00; // set variable z to zero
+				}
+			}
+}
