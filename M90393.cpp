@@ -444,7 +444,7 @@ float M90393::getSenseZ(){
 	readout = cmdRR(0x00, 0x00, 0x00);
 	value_gain = (readout & 0x70) >> 4;
 	value_hallconf = (readout & 0xF);
-	readout = cmdRR(0x0A, 0x00, 0x00);
+	readout = cmdRR(0x02, 0x00, 0x00);
 	value_res = (readout & 0x60) >> 5;
 	tmp = gainlookup[gain][1];
 	res = value_res;
@@ -491,7 +491,7 @@ float M90393::getSenseX(){
 	readout = cmdRR(0x00, 0x00, 0x00);
 	value_gain = (readout & 0x70) >> 4;
 	value_hallconf = (readout & 0xF);
-	readout = cmdRR(0x0A, 0x00, 0x00);
+	readout = cmdRR(0x02, 0x00, 0x00);
 	value_res = (readout & 0x600) >> 9;
 	tmp = gainlookup[gain][1];
 	res = value_res;
@@ -517,7 +517,7 @@ float M90393::getSenseY(){
 	readout = cmdRR(0x00, 0x00, 0x00);
 	value_gain = (readout & 0x70) >> 4;
 	value_hallconf = (readout & 0xF);
-	readout = cmdRR(0x0A, 0x00, 0x00);
+	readout = cmdRR(0x02, 0x00, 0x00);
 	value_res = (readout & 0x180) >> 7;
 	tmp = gainlookup[gain][1];
 	res = value_res;
