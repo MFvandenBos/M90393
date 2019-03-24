@@ -80,17 +80,20 @@ class M90393
 	void readTcomp();
 	void readHallConF();
 	int getResX();
+	float retrieve_Calib(int sensor, unsigned short mode);
+	float retrieve_filter(int sensor, unsigned short mode);
+	float retrieve_raw(int sensor, unsigned short mode);
 	// filter functions
 	void filter_init(float P0, float X_0, float Y_0, float Z_0, float R);
 	void filter(unsigned char zyxt);  
-	float retrieve_filter(int sensor, unsigned short mode);
-	float retrieve_raw(int sensor, unsigned short mode);
 	void Kalmanupdate(int count, int axis);
 	double qDet(double qold, double mq, double R_r);
 	void grab(unsigned char zyxt);
 	
 	//calibration functions
 	void temp_CAL();
+	void zero_CAL();
+	unsigned char conversT(unsigned char zyxt);
 	
 	
 	// example functions
@@ -107,21 +110,25 @@ class M90393
 	
     int _selct;
     int sensorSelect;
-   private:
-   // filter variables
+	
+	// filter variables
 	float resultmatrix[16][4]; // grab takes variables, converts them into values and stores them in this matrix
 	float resultmatrixfilter[16][4]; // here filtered values are stored. filter updates them with the results from resultmatrix. 
 	float filtermatrix[16][4]; // stores Q, R, K, and P for the filter. 
 	float kmatrix[16][3]; // stores divergent K for each axis
 	float pmatrix[16][3]; // stores divergent P for each axis.  
 	unsigned short tREF_ACT[16]; //stores the reference temperatures for all sensors  
-	float offset_matrix[16][3]; // stores x, y and z offsets. It was chosen to use this matrix rather than the offset values on the MLX90393 chip because it gives better control. 
+	float offset_matrix[16][3]; // stores x, y and z offsets. It was chosen to use this matrix rather than the offset values on the MLX90393 chip because it gives better control.
+	
+	
+   private:
+    
 	// Besides, the offset values on the chip are used by the temperature compensation algorithm on the chip. It is still not clear to me exactly how, but,
 	// It is clear that the offset values on the chip are used only if TC is turned on. If TC is turned off, there are also other problems to deal with. 
-	
-	
-	char Dig_filt_actual; //stores the actual value of digital filter
-	char OSR_actual; // stores the actual value of the OSR
+	float convergence_matrix[25];
+	float movingaverage[16][4];
+	unsigned char Dig_filt_actual; //stores the actual value of digital filter
+	unsigned char OSR_actual; // stores the actual value of the OSR
 		
 	unsigned short TREF; 
   	int UsEL;
