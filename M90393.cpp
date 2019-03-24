@@ -1,4 +1,3 @@
-#include "Energia.h"
 /*
   M90393.ccp - Library for simplified MLX90393 SPI communication.
   Created by Michael van den Bos, January 19th, 2019
@@ -9,8 +8,8 @@
 
 // constructor assigns pins according to the number of sensors
 // constructor contains gain lookup table
-// constructor adds pullups to inputs
-// constructor sets output pins for CS, SCLK, MOSI
+// constructor cannot add pullups to inputs call void M90393::mcinit(){
+// constructor cannot set output pins for CS, SCLK, MOSI void M90393::mcinit(){
 M90393::M90393(int sensors){
 	num_s = sensors;
 
@@ -43,33 +42,24 @@ gainlookup[7][0]=0.1502;gainlookup[7][1]=0.242;
  // can only initialize the values like this when assigning the array. Otherwise it has to be done item by item. 
  // _MISO[17] = {MISO0, MISO1, MISO2, MISO3, MISO4, MISO5, MISO6, MISO7, MISO8, MISO9, MISO10, MISO11, MISO12, MISO13, MISO14, MISO15, MISO16};
  // int _MOSI = {0, MOSI1, MOSI2, MOSI3, MOSI4, MOSI5, MOSI6, MOSI7, MOSI8, MOSI9, MOSI10, MOSI11, MOSI12, MOSI13, MOSI14, MOSI15, MOSI16};  
-
-  
-   // use a for loop to initialize each pin as an output for Master Out Slave In:
-   // MOSI pins are connected to a pull up. 
-//  for (int sensorSelect = 1; sensorSelect < num_s+1; sensorSelect++)  {
-//    pinMode(_MOSI(sensorSelect), OUTPUT);
-//  }
-  
-
- 
-  // set knownRes to false: this forces to run readRes. 
-	
 	// end of constructor
 };
 
 void M90393::mcinit(){
-	  // pins are automatically set to input without pull up. Make sure to connect a pull up to each input pin. 
-  // this can not be put in the constructor!!!!!!!!!!!!!!
+  // pins are automatically set to input without pull up. Make sure to connect a pull up to each input pin. 
+  // this can not be put in the constructor
   for (sensorSelect = 0; sensorSelect < num_s+1; sensorSelect++)  {
     pinMode(_MISO[sensorSelect], INPUT_PULLUP);
   }
+   // use a for loop to initialize each pin as an output for Master Out Slave In:
+   // MOSI pins are connected to a pull up. 
   digitalWrite(CS, HIGH); 
   digitalWrite(SCLK, HIGH); 
   digitalWrite(MOSI0, HIGH);
   pinMode(CS, OUTPUT);
   pinMode(SCLK, OUTPUT);
   pinMode(MOSI0, OUTPUT);
+    // set knownRes to false: this forces to run readRes. 
   knownRes = false;
   knowntcomp = false; 
 }
@@ -150,29 +140,34 @@ void M90393::temp_CAL(){
 void M90393::zero_CAL(){
 	unsigned char zyxt = 0x0F;
 	unsigned char outp; 
-	outp = cmdEX(); 
-	cmdSM(zyxt);
+	outp = cmdEX(); delay(10);
+	outp = cmdSM(zyxt);
 	delay(conversT(zyxt));
 	cmdRM(zyxt); 
-	filter_init(2500, retrieve(0,2), retrieve(0,3), retrieve(0,4) , 250); 
-	cmdSM(zyxt);
+	// initializing the filter here does not work for some reason.
+		// make sure to call filter_init before zero_CAL
+		// might be a scope issue 	
+	outp = cmdSM(zyxt);
 	delay(conversT(zyxt));
+	Serial.println("hoi");
 	cmdRM(zyxt); 
+	delay(1);
 	filter(zyxt);
 	for(int count = 0; count < 5; count++){ 
 		cmdSM(zyxt);
 		delay(conversT(zyxt));
+		Serial.print("T = ");Serial.println(conversT(zyxt));
 		cmdRM(zyxt); 
 		filter(zyxt);
 		Serial.print("z1 = "); Serial.print(retrieve(0,4)/100);  Serial.print(" ");  
-		Serial.print("zf = "); Serial.println(retrieve_filter(0,4)/100);  
+		Serial.print("zf = "); Serial.print(retrieve_filter(0,4)/100);  Serial.println(" "); 
 	}
 	cmdSM(zyxt);
 	delay(conversT(zyxt));
 	cmdRM(zyxt); 
 	filter(zyxt);
 	for(int count = 0; count < num_s; count++){ 
-		for(int count2 = 10; count2 < 4; count2++){ 
+		for(int count2 = 1; count2 < 4; count2++){ 
 			offset_matrix[count][count2-1] = resultmatrixfilter[count][count2];
 		}
 	}	
@@ -197,7 +192,7 @@ void M90393::zero_CAL(){
 		convergence_matrix[_cycles] = convergence2/(num_s/3); 
 		_cycles = _cycles +1;
 		if(_cycles == 25){_cycles = 0;}  
-		convergence = convergence - 10;
+		convergence = convergence - 50;
 		convergence2 = 0;
 		for (int count = 0; count < _cycles; count++){
 			convergence2 = convergence_matrix[count] + convergence2;
@@ -208,7 +203,10 @@ void M90393::zero_CAL(){
 		}
 	}	
 	int devi = 1;
-	for(int count = 0; count < 500; count++){ 
+	for(int count3 = 0; count3 < num_s; count3++){ 
+			for(int count2 = 1; count2 < 4; count2++){ 
+				movingaverage[count3][count2] = 0;}}
+	for(int count = 0; count < 50; count++){ 
 		cmdSM(zyxt);
 		delay(conversT(zyxt));
 		cmdRM(zyxt); 
@@ -220,13 +218,19 @@ void M90393::zero_CAL(){
 				
 			}
 		}			
-		 
+		//  
 		Serial.print("z1 = "); Serial.print(retrieve(0,4)/100);  Serial.print(" ");
 		Serial.print("zm = "); Serial.print(movingaverage[0][3]/devi/100);  Serial.print(" ");	
 		Serial.print("zf = "); Serial.println(retrieve_filter(0,4)/100);  
 		devi = devi + 1;
 	}
-	
+	// moving average is then the offset
+	for(int count3 = 0; count3 < num_s; count3++){ 
+		for(int count2 = 0; count2 < 3; count2++){ 
+			offset_matrix[count3][count2] = movingaverage[count3][count2+1]/devi; 
+				
+		}
+	}		
 }
 	
 // kalman filter
@@ -234,7 +238,7 @@ void M90393::zero_CAL(){
 // use 100 ms digital filter
 		
 void M90393::filter(unsigned char zyxt){
-	grab(zyxt); // takes data from datamatrix and converts it into floats in resultmatrix. 
+	grab(zyxt); // takes raw data from datamatrix and converts it into floats in resultmatrix. 
 		//time update
 		// x_k is predicted to be x_k-1
 		//Pk* = Pk-1 + Q
@@ -277,30 +281,24 @@ void M90393::Kalmanupdate(int sensor, int axis){
 }
 		
 double M90393::qDet(double qold, double mq, double R_r){
-	// maybe this can be done smarter
-	double qnew = 2*R_r;
+	//The measurement should be made of constant magnetic fields. Therefore the process noise should be low. 
+	//However that would mean the filter becomes unresponsive. In order to make sure there is a response to a current change, 
+	//process noise will be increased if the measurement value is too far from the filter value. 
+	double qmin = 0.05*R_r; // results in 0.2 of sensor value response, 0.8 of average. 
+	double qnew = 0.5*R_r; // results in 0.5 sensor value response, 0.5 of average. 
+	double qmax = 4*R_r;  // results in in 0.8 of sensor value response, 0.2 of average. 
 	if(mq > 8*R_r ){
-		qnew = 4*R_r; 
+		if(qold < 5*qmin){
+			qnew = 4*qold; // rapid increase
+		}else{
+		qnew = qmax;	// if increasing the qnew does not work, increase to max. 
+		}
 	}
-	else if(mq > 4*R_r){
-		if(qold > 4*R_r){ qnew = 2*R_r; }
-		else if( qold < 2*R_r ){qnew = 2*qold;}
-		else{qnew = qold;}
+	else{qnew = qold/2; // if mq is low, steer toward. 0.25 of sensor value. 
 		}
-	else if(mq > 2*R_r){
-		if(qold > 2*R_r){ qnew = R_r; }
-		else if( qold < R_r ){qnew = 2*qold;}
-		else{qnew = qold;}
-		}
-	else if(mq > R_r){
-		if(qold > R_r){ qnew = R_r/2.0; }
-		else if( qold < R_r ){qnew = 2*qold;}
-		else{qnew = qold;}
-		}
-	else if(mq < R_r){
-		qnew = qold/2.0; 
-			if(qnew < R_r/100){qnew = qold;}
-		}
+	if(qnew < qmin){
+		qnew = qmin; 
+	}		
 	return qnew;
 }
 			
@@ -308,24 +306,28 @@ double M90393::qDet(double qold, double mq, double R_r){
 void M90393::filter_init(float P0, float X_0, float Y_0, float Z_0, float R){
 //  float filtermatrix[16][4]; // stores Q, R, K, and P for the filter. 
 	for(int count = 0; count < num_s; count++){
-		filtermatrix[count][3] = P0;
-		filtermatrix[count][1] = R;
-		filtermatrix[count][0] = filtermatrix[count][1];
-		filtermatrix[count][2] = 1;
-		resultmatrixfilter[count][0] = 25;
+		filtermatrix[count][0] = qDet(4*R, 4*R, R); // initializes Q
+		filtermatrix[count][1] = R; 	// Stores R
+		filtermatrix[count][2] = 1; 	// K begins at 1. 
+		filtermatrix[count][3] = P0;	// 
+		
+		resultmatrixfilter[count][0] = 25; //temperature
 		resultmatrixfilter[count][0] = X_0;
 		resultmatrixfilter[count][0] = Y_0;
 		resultmatrixfilter[count][0] = Z_0;
 		for(int count2 = 0; count2 < 3; count2++){ 
 			kmatrix[count][count2] = filtermatrix[count][2];	 
-			pmatrix[count][count2] = filtermatrix[count][3];
+			pmatrix[count][count2] = filtermatrix[count][3]; 	// determines the ahead error covariance. should be square of noise measured
+			// exact value of P_o makes little difference over time, but it determines how fast the filter corrects to the right value in the beginning.  
 		}						
 	}
 }		
 		
 //T conversion :  calculate conversion time based on the formula in the table and the safety factor. 
 unsigned char M90393::conversT(unsigned char zyxt){
-	unsigned char TconvT = (2 + pow(2, Dig_filt_actual))*pow(2, OSR_actual)*64/1000;
+	int digf = Dig_filt_actual;
+	int osrf = OSR_actual;
+	float TconvT = (2.f + pow(2.f, digf))*pow(2.f, osrf)*64.f/1000.f;
 	unsigned char multipli = 0;
 	if ((zyxt & 0x08) > 0){
 	multipli = multipli + 1;}
@@ -334,7 +336,7 @@ unsigned char M90393::conversT(unsigned char zyxt){
 	if ((zyxt & 0x02) > 0){
 	multipli = multipli + 1;}
 	unsigned char conversionTime = 2;	
-	conversionTime = conversionTime + multipli * (TconvT+2); 
+	conversionTime = conversionTime + multipli * ((int)TconvT+2); 
 	return conversionTime;
 }
 		
@@ -671,12 +673,18 @@ unsigned char M90393::setFilter(unsigned char DIG_FILT){
 	c3 |= mask; // This breaks up the mask in to chars that can be input in the cmdWR function. 
 	unsigned char wrstatus =0x00;
 	wrstatus = cmdWR(c2, c3, 0x02); //Write the mask onto volatile memory. That means it will be cleared during a reset. 
+	
+	Dig_filt_actual = DIG_FILT; // stores value 
 	return wrstatus;
 	
 
 }
 
 unsigned char M90393::setOSR(unsigned char OSR, unsigned char OSR2){
+	
+	// OSR sets magnetic oversampling
+	// OSR2 sets thermal oversampling
+	OSR_actual = OSR;
 	unsigned short readout; 
 	readout = cmdRR(0x02);
 	unsigned short mask = OSR;
@@ -700,6 +708,22 @@ unsigned char M90393::setOSR(unsigned char OSR, unsigned char OSR2){
 }
 
 unsigned char M90393::setADC(unsigned char OSR, unsigned char OSR2, unsigned char DIG_FILT, unsigned char RES_X, unsigned char RES_Y, unsigned char RES_Z){
+	knownRes = false;
+  knowntcomp = false; 
+  
+  
+  
+  
+  
+  
+  if (knownRes){}
+	else{readRes(); 
+		knownRes = true;}
+	if (knowntcomp){}
+	else{readTcomp();
+	knowntcomp = true;}
+  
+	
 }
 
 //+++++++++++++++++++++++++++++++++++++++++++++++++++++ retrieval functions +++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -969,15 +993,19 @@ float M90393::retrieve_filter(int sensor, unsigned short mode){
 	}
 }
 
-float M90393::retrieve(int sensor, unsigned short mode){
-	if (knownRes){}
-	else{readRes(); 
-		knownRes = true;}
-	if (knowntcomp){}
-	else{readTcomp();
-	knowntcomp = true;}
+float M90393::retrieve_Calib(int sensor, unsigned short mode){
+	// mode is axis - 1 
+	if(mode == 0 ){
+			return 0;
+	}
+	else{
+		float output_calib = resultmatrixfilter[sensor][(mode-1)]-offset_matrix[sensor][mode-2];
+	return output_calib;
+	}
+}
 
-	
+
+float M90393::retrieve(int sensor, unsigned short mode){
 	switch(mode){
 		case 0: {
 			unsigned short tmp = 0;
