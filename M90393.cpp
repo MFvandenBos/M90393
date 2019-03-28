@@ -1,15 +1,29 @@
 /*
-  M90393.ccp - Library for simplified MLX90393 SPI communication.
-  Created by Michael van den Bos, January 19th, 2019
-*/
+ * M90393.ccp - Library for simplified MLX90393 SPI communication.
+ * Created by Michael van den Bos, January 19th, 2019
+ * 
+ * Copyright (c) 2019 by Michael van den Bos <m.f.vandenbos@student.tudelft.nl>
+ *
+ * MLX90393: a library to provide functions to interface via SPI with the 
+ * MLX90393 magnetic sensor. It is based on high level energia functions. 
+ * It is possible to use this library in  Energia (the Arduino port for MSP microcontrollers) 
+ * It is specifically written for msp-exp432p401r (RED)
+ *
+ * This file is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License 
+ * version 3, both as published by the Free Software Foundation.
+ *
+ */
+
 
 #include "Energia.h"
 #include "M90393.h"
 
 // constructor assigns pins according to the number of sensors
 // constructor contains gain lookup table
-// constructor cannot add pullups to inputs call void M90393::mcinit(){
-// constructor cannot set output pins for CS, SCLK, MOSI void M90393::mcinit(){
+// constructor cannot add pullups to inputs, 
+// constructor cannot set output pins for CS, SCLK, MOSI, 
+// call void M90393::mcinit(){ to initialize 
 M90393::M90393(int sensors){
 	num_s = sensors;
 
@@ -31,43 +45,40 @@ M90393::M90393(int sensors){
 	_MISO[15] = MISO15;
 	_MISO[16] = MISO16;
 
-gainlookup[0][0]=0.751;gainlookup[0][1]=1.210;
-gainlookup[1][0]=0.601;gainlookup[1][1]=0.968;
-gainlookup[2][0]=0.451;gainlookup[2][1]=0.726;
-gainlookup[3][0]=0.376;gainlookup[3][1]=0.605;
-gainlookup[4][0]=0.3004;gainlookup[4][1]=0.484;
-gainlookup[5][0]=0.2504;gainlookup[5][1]=0.403;
-gainlookup[6][0]=0.2004;gainlookup[6][1]=0.323;
-gainlookup[7][0]=0.1502;gainlookup[7][1]=0.242;
- // can only initialize the values like this when assigning the array. Otherwise it has to be done item by item. 
- // _MISO[17] = {MISO0, MISO1, MISO2, MISO3, MISO4, MISO5, MISO6, MISO7, MISO8, MISO9, MISO10, MISO11, MISO12, MISO13, MISO14, MISO15, MISO16};
- // int _MOSI = {0, MOSI1, MOSI2, MOSI3, MOSI4, MOSI5, MOSI6, MOSI7, MOSI8, MOSI9, MOSI10, MOSI11, MOSI12, MOSI13, MOSI14, MOSI15, MOSI16};  
+	gainlookup[0][0]=0.751;gainlookup[0][1]=1.210;
+	gainlookup[1][0]=0.601;gainlookup[1][1]=0.968;
+	gainlookup[2][0]=0.451;gainlookup[2][1]=0.726;
+	gainlookup[3][0]=0.376;gainlookup[3][1]=0.605;
+	gainlookup[4][0]=0.3004;gainlookup[4][1]=0.484;
+	gainlookup[5][0]=0.2504;gainlookup[5][1]=0.403;
+	gainlookup[6][0]=0.2004;gainlookup[6][1]=0.323;
+	gainlookup[7][0]=0.1502;gainlookup[7][1]=0.242;
+	// can only initialize the values like this when assigning the array. Otherwise it has to be done item by item. 
 	// end of constructor
 };
 
 void M90393::mcinit(){
   // pins are automatically set to input without pull up. Make sure to connect a pull up to each input pin. 
   // this can not be put in the constructor
+  // use a for loop to initialize each pin as an output for Master Out Slave In:
+  // MOSI pins are connected to a pull up. 
   for (sensorSelect = 0; sensorSelect < num_s+1; sensorSelect++)  {
     pinMode(_MISO[sensorSelect], INPUT_PULLUP);
   }
-   // use a for loop to initialize each pin as an output for Master Out Slave In:
-   // MOSI pins are connected to a pull up. 
   digitalWrite(CS, HIGH); 
   digitalWrite(SCLK, HIGH); 
   digitalWrite(MOSI0, HIGH);
   pinMode(CS, OUTPUT);
   pinMode(SCLK, OUTPUT);
   pinMode(MOSI0, OUTPUT);
-    // set knownRes to false: this forces to run readRes. 
+  // set knownRes to false: this forces to run readRes. 
   knownRes = false;
   knowntcomp = false; 
 }
 
-
-
-
 //+++++++++++++++++++++++++++++++++++++++++++++++++++++ Command functions +++++++++++++++++++++++++++++++++++++++++++++++++++++
+//Mid level functions which are used to send commands to the sensor. Except for Read measurement and Read register, they will return
+//the sensor status byte. These functions are called by higher level functions or by user.  
 unsigned char M90393::cmdNOP(){
     unsigned char inputchar = 0x00;
     return sendCommand1(inputchar);
@@ -77,46 +88,54 @@ unsigned char M90393::cmdEX(){
     return sendCommand1(inputchar);
 }
 unsigned char M90393::cmdSB(char zyxt){
+	// this function has not been tested
     unsigned char inputchar = 0x10;
     // warning add zyxt
-    //inputchar |= zyxt;
+    inputchar |= zyxt;
     return sendCommand1(inputchar);
 }
 unsigned char M90393::cmdSWOC(char zyxt){
+	// this function has not been tested
     unsigned char inputchar = 0x20;
     // warning add zyxt
-    //inputchar = inputchar|zyxt;
+    inputchar = inputchar|zyxt;
     return sendCommand1(inputchar);
 }
 unsigned char M90393::cmdSM(char zyxt){
+	// this function will command the sensor to measure the axis specified in zyxt
     unsigned char inputchar = 0x30;
     // warning add zyxt
     inputchar = inputchar|zyxt;
     return sendCommand1(inputchar);
 }
 void M90393::cmdRM(char zyxt){
+	// this function will command the sensor to read back the axis specified in zyxt
     unsigned char inputchar = 0x40;
     // warning add zyxt
     inputchar = inputchar|zyxt;
 	if(zyxt == 0x0F){
-		//Serial.println("zyxt = 0x0F");
-		//Serial.print("zyxt = " ); Serial.println(zyxt, HEX);
-		//readMLX90393_multi(shortoutputmatrix, numsensors);
 		sendCommandlong(inputchar, 0x00, 0x00, 0x00, num_s, 1 ,8);}
 	else{
 		sendCommandlong(inputchar, 0x00, 0x00, 0x00, num_s, 1 ,8, zyxt);}
 }
 unsigned char M90393::cmdRT(){
+	// this function will command the sensor to reset. 
+	// This has to be done each time the sensor is started
+	// It makes sure that the senor volatile memory is equal to the permanent memory
     unsigned char inputchar = 0xF0;
     return sendCommand1(inputchar);
 }
 unsigned char M90393::cmdWR(unsigned char c2, unsigned char c3, unsigned char c4){
+	// this function will command the sensor take the data in it's volatile memory and store it in its permanent memory
+	// Use sparingly and with caution. The sensor can perform this operation a limited amount of times
+	// Upon next reset the new permanent memory will be read to the volatile memory. This function can therefore alter the reset state
 	unsigned char inputchar = 0x60;
 	sendCommandlong(inputchar, c2, c3, (c4<<2), num_s, 4, 0);
 	return statusmatrix[0];
 	// maybe return a bitwise sum instead of just the first one. This allows for finding errors.  	
 }
 unsigned short M90393::cmdRR(unsigned char c2){
+	// this function will command the sensor to read back the specified memory location
 	resetdatamatrix();
 	unsigned char inputchar = 0x50;
 	unsigned char c3 = 0x00;
@@ -125,8 +144,8 @@ unsigned short M90393::cmdRR(unsigned char c2){
 	return datamatrix[0][0];
 }
 //+++++++++++++++++++++++++++++++++++++++++++++++++++++ Calibration functions +++++++++++++++++++++++++++++++++++++++++++++++++++++
-// temperature
-		// there is a temperature value in the memory
+    // temperature
+	// there is a temperature value in the memory of the sensor
 void M90393::temp_CAL(){
 	TREF = cmdRR(0x24); 
 	for(int count = 0; count < num_s; count++){ 
@@ -138,60 +157,40 @@ void M90393::temp_CAL(){
 // zero calibration
 	// set calibration to zero. store the offset either in the sensor or in the processor
 void M90393::zero_CAL(){
+	// this thing is way to complex. I will reduce the number of things this has to do. 
 	unsigned char zyxt = 0x0F;
 	unsigned char outp; 
-	outp = cmdEX(); delay(10);
-	outp = cmdSM(zyxt);
-	delay(conversT(zyxt));
-	cmdRM(zyxt); 
-	// initializing the filter here does not work for some reason.
-		// make sure to call filter_init before zero_CAL
-		// might be a scope issue 	
-	outp = cmdSM(zyxt);
-	delay(conversT(zyxt));
-	Serial.println("hoi");
-	cmdRM(zyxt); 
-	delay(1);
-	filter(zyxt);
-	for(int count = 0; count < 5; count++){ 
+	// next part creates baseline
+	for(int count = 0; count < 5; count++){ // do 5 measurements
 		cmdSM(zyxt);
 		delay(conversT(zyxt));
-		Serial.print("T = ");Serial.println(conversT(zyxt));
 		cmdRM(zyxt); 
 		filter(zyxt);
-		Serial.print("z1 = "); Serial.print(retrieve(0,4)/100);  Serial.print(" ");  
-		Serial.print("zf = "); Serial.print(retrieve_filter(0,4)/100);  Serial.println(" "); 
-	}
-	cmdSM(zyxt);
-	delay(conversT(zyxt));
-	cmdRM(zyxt); 
-	filter(zyxt);
+	} 
+	// the folowing ensures that the offset_matrix is reset to a reasonable value
 	for(int count = 0; count < num_s; count++){ 
 		for(int count2 = 1; count2 < 4; count2++){ 
 			offset_matrix[count][count2-1] = resultmatrixfilter[count][count2];
 		}
 	}	
-	float convergence = 1000;	
-	float convergence2 = 0; 
-		
-	int _cycles = 0;
+	// idea is to stop when convergence is good enough. However it usually is so noisy it does not reach convergence
+	int _cycles = 0; float convergence2 = 0; 	float convergence = 1000;
 	while (convergence > 100){
-		//Serial.println(convergence); 
 		cmdSM(zyxt);
 		delay(conversT(zyxt));
 		cmdRM(zyxt); 
 		filter(zyxt);
-		Serial.print("z1 = "); Serial.print(retrieve(0,4)/100); Serial.print(" ");   
-		Serial.print("zf = "); Serial.println(retrieve_filter(0,4)/100);  
 		for(int count = 0; count < num_s; count++){ 
 			for(int count2 = 1; count2 < 4; count2++){ 
 			convergence2 = convergence2 + fabs(offset_matrix[count][count2-1] - resultmatrixfilter[count][count2]);
 			offset_matrix[count][count2-1] = resultmatrixfilter[count][count2];
 			}
 		}
-		convergence_matrix[_cycles] = convergence2/(num_s/3); 
+		// make a list of convergence
+		convergence_matrix[_cycles] = convergence2/(num_s*3); 
 		_cycles = _cycles +1;
-		if(_cycles == 25){_cycles = 0;}  
+		if(_cycles == 25){_cycles = 0;} // matrix only has 25 slots
+		// this makes sure the loop will end even if convergence is not reached. 
 		convergence = convergence - 50;
 		convergence2 = 0;
 		for (int count = 0; count < _cycles; count++){
@@ -259,14 +258,13 @@ void M90393::filter(unsigned char zyxt){
 			kmatrix[count][count2] = pmatrix[count][count2]/(pmatrix[count][count2] + filtermatrix[count][1]);
 		}
 		// T, x_k, y_k, z_k
-		resultmatrixfilter[count][0] = resultmatrix[count][0];
+		resultmatrixfilter[count][0] = resultmatrix[count][0]; // Temperature is not filtered copied for consistency
 		for(int count2 = 1; count2 < 4; count2++){ 
 			Kalmanupdate(count, count2);
 		} 
 	}
-	double mx = 0;
-	double mf = 0;
-	double mq = filtermatrix[0][1];
+	// estimate dynamic process noise
+	double mx = 0; double mf = 0; double mq = filtermatrix[0][1];
 	for(int count = 0; count < num_s; count++){ 
 		mx = pow(pow(resultmatrix[count][0], 2)+ pow(resultmatrix[count][1], 2)+ pow(resultmatrix[count][2], 2),0.5);
 		mf = pow(pow(resultmatrixfilter[count][0], 2)+ pow(resultmatrixfilter[count][0], 2)+ pow(resultmatrixfilter[count][0], 2),0.5);
